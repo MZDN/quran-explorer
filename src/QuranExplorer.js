@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { AiFillHeart } from 'react-icons/ai';
 
 const AppContainer = styled.div`
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
   font-family: 'Roboto', sans-serif;
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 `;
@@ -146,6 +147,47 @@ const LanguageButton = styled.button`
   }
 `;
 
+const NavigationControls = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+`;
+
+const PageInput = styled.input`
+  width: 60px;
+  padding: 5px;
+  margin: 0 10px;
+  text-align: center;
+`;
+
+const Footer = styled.footer`
+  text-align: center;
+  padding: 20px;
+  background-color: #1F3A5F;
+  color: white;
+  margin-top: 20px;
+`;
+
+const HeartIcon = styled(AiFillHeart)`
+  color: red;
+  vertical-align: middle;
+`;
+
+const GitHubLink = styled.a`
+  color: white;
+  text-decoration: none;
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const ErrorMessage = styled.p`
+  color: #e74c3c;
+  text-align: center;
+  margin-top: 20px;
+`;
+
 const QuranExplorer = () => {
   const [surahs, setSurahs] = useState([]);
   const [selectedSurah, setSelectedSurah] = useState(null);
@@ -153,13 +195,14 @@ const QuranExplorer = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('ar');
+  const [customOffset, setCustomOffset] = useState(1);
+  const [error, setError] = useState(null);
   const versesPerPage = 10;
 
   const translations = {
     ar: null,
     en: 131, // Saheeh International
     fr: 136, // Muhammad Hamidullah
-    de: 137, // Abu Rida Muhammad ibn Ahmad ibn Rassoul
   };
 
   useEffect(() => {
@@ -169,30 +212,42 @@ const QuranExplorer = () => {
         setSurahs(response.data.chapters);
       } catch (error) {
         console.error('Error fetching surahs:', error);
+        setError('Failed to fetch Surahs. Please try again later.');
       }
     };
 
     fetchSurahs();
   }, []);
 
-  const fetchSurahContent = async (surahId, language, page) => {
+  const fetchSurahContent = async (surahId, language, page, offset = 1) => {
     setLoading(true);
+    setError(null);
     try {
-      let endpoint = `https://api.quran.com/api/v4/verses/by_chapter/${surahId}?language=${language}&words=true&word_fields=text_uthmani&page=${page}&per_page=${versesPerPage}`;
+      let endpoint = `https://api.quran.com/api/v4/quran/verses/uthmani?chapter_number=${surahId}&offset=${offset - 1}&limit=${versesPerPage}`;
       
+      const versesResponse = await axios.get(endpoint);
+      
+      let translationsResponse = null;
       if (language !== 'ar' && translations[language]) {
-        endpoint += `&translations=${translations[language]}`;
+        const translationEndpoint = `https://api.quran.com/api/v4/quran/translations/${translations[language]}?chapter_number=${surahId}&offset=${offset - 1}&limit=${versesPerPage}`;
+        translationsResponse = await axios.get(translationEndpoint);
       }
-
-      const response = await axios.get(endpoint);
-      const verses = response.data.verses.map(verse => ({
+      
+      const verses = versesResponse.data.verses.map((verse, index) => ({
         id: verse.id,
-        arabic: verse.words.map(word => word.text_uthmani).join(' '),
-        translation: language !== 'ar' && verse.translations ? verse.translations[0].text : null
+        verseNumber: verse.verse_key,
+        arabic: verse.text_uthmani,
+        translation: translationsResponse ? translationsResponse.data.translations[index].text : null,
       }));
+
       setSurahVerses(verses);
     } catch (error) {
       console.error('Error fetching surah content:', error);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
+      setError('Failed to fetch Surah content. Please try again later.');
     }
     setLoading(false);
   };
@@ -200,20 +255,31 @@ const QuranExplorer = () => {
   const handleSurahClick = (surah) => {
     setSelectedSurah(surah);
     setCurrentPage(1);
+    setCustomOffset(1);
     fetchSurahContent(surah.id, selectedLanguage, 1);
   };
 
   const handleLanguageChange = (language) => {
     setSelectedLanguage(language);
     if (selectedSurah) {
-      setCurrentPage(1);
-      fetchSurahContent(selectedSurah.id, language, 1);
+      fetchSurahContent(selectedSurah.id, language, currentPage, customOffset);
     }
   };
 
   const handlePageChange = (newPage) => {
+    const newOffset = (newPage - 1) * versesPerPage + 1;
     setCurrentPage(newPage);
-    fetchSurahContent(selectedSurah.id, selectedLanguage, newPage);
+    setCustomOffset(newOffset);
+    fetchSurahContent(selectedSurah.id, selectedLanguage, newPage, newOffset);
+  };
+
+  const handleCustomOffsetChange = (event) => {
+    const offset = parseInt(event.target.value, 10);
+    if (!isNaN(offset) && offset > 0 && offset <= selectedSurah.verses_count) {
+      setCustomOffset(offset);
+      setCurrentPage(Math.ceil(offset / versesPerPage));
+      fetchSurahContent(selectedSurah.id, selectedLanguage, Math.ceil(offset / versesPerPage), offset);
+    }
   };
 
   const totalPages = selectedSurah ? Math.ceil(selectedSurah.verses_count / versesPerPage) : 0;
@@ -227,6 +293,7 @@ const QuranExplorer = () => {
       </Header>
       
       <ScrollableContent>
+        {error && <ErrorMessage>{error}</ErrorMessage>}
         {!selectedSurah ? (
           <SurahGrid>
             {surahs.map((surah) => (
@@ -255,10 +322,39 @@ const QuranExplorer = () => {
                   active={selectedLanguage === lang} 
                   onClick={() => handleLanguageChange(lang)}
                 >
-                  {lang.toUpperCase()}
+                  {lang === 'ar' ? 'ARABIC' : lang.toUpperCase()}
                 </LanguageButton>
               ))}
             </LanguageSelector>
+            <NavigationControls>
+              <div>
+                Start from verse: 
+                <PageInput 
+                  type="number" 
+                  value={customOffset} 
+                  onChange={handleCustomOffsetChange} 
+                  min={1} 
+                  max={selectedSurah.verses_count}
+                />
+              </div>
+              <Pagination>
+                <PageButton 
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </PageButton>
+                <span style={{ margin: '0 10px' }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <PageButton 
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </PageButton>
+              </Pagination>
+            </NavigationControls>
             {loading ? (
               <LoadingText>Loading Surah content...</LoadingText>
             ) : (
@@ -266,33 +362,30 @@ const QuranExplorer = () => {
                 {surahVerses.map((verse) => (
                   <VerseContainer key={verse.id}>
                     <ArabicText>{verse.arabic}</ArabicText>
-                    {selectedLanguage !== 'ar' && verse.translation && (
-                      <TranslationText isRTL={isRTL}>{verse.translation}</TranslationText>
+                    {selectedLanguage !== 'ar' && (
+                      verse.translation ? (
+                        <TranslationText isRTL={isRTL}>{verse.translation}</TranslationText>
+                      ) : (
+                        <TranslationText>Translation not available</TranslationText>
+                      )
                     )}
+                    <SurahInfo>Verse: {verse.verseNumber}</SurahInfo>
                   </VerseContainer>
                 ))}
-                <Pagination>
-                  <PageButton 
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                  >
-                    Previous
-                  </PageButton>
-                  <span style={{ margin: '0 10px' }}>
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <PageButton 
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                  >
-                    Next
-                  </PageButton>
-                </Pagination>
               </>
             )}
           </SurahView>
         )}
       </ScrollableContent>
+
+      <Footer>
+        <p>
+          Made with <HeartIcon /> by{'  MZDN  '}
+          <GitHubLink href="https://github.com/MZDN/quran-explorer" target="_blank" rel="noopener noreferrer">
+            QuranVerse
+          </GitHubLink>
+        </p>
+      </Footer>
     </AppContainer>
   );
 };
