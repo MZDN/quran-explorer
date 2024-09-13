@@ -32,8 +32,8 @@ These instructions will get you a copy of the project up and running on your loc
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/quranverse.git
-   cd quranverse
+   git clone https://github.com/yourusername/quran-explorer.git
+   cd quran-explorer
    ```
 
 2. Install dependencies:
