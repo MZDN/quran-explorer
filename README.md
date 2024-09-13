@@ -77,5 +77,3 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 - Implement a dark mode
 
 ---
-
-Feel free to customize this README to better fit your project's specific details and requirements!
