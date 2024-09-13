@@ -76,4 +76,4 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 - Add more translations and tafsirs
 - Implement a dark mode
 
----
+
